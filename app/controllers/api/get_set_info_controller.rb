@@ -1,6 +1,6 @@
 class Api::GetSetInfoController < ApplicationController
 
-  http_basic_authenticate_with :name => "brickfever", :password => "brickfever"
+  http_basic_authenticate_with :name => "bricklink", :password => "bricklink"
 
   skip_before_filter :authenticate_user! # we do not need devise authentication here
 
