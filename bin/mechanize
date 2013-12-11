@@ -1,0 +1,41 @@
+require 'rubygems'
+require 'mechanize'
+
+a = Mechanize.new { |agent|
+  agent.follow_meta_refresh = true
+}
+
+a.get('http://www.bricklink.com/') do |page|
+  # Click the login link
+  login_page = a.click(page.link_with(:text => /Login/))
+
+  # Submit the login form
+  my_page = login_page.form_with(:action => '/login.asp?logInTo=&logFolder=p&logSub=w') do |f|
+    f.frmUsername  = ARGV[0]
+    f.frmPassword  = ARGV[1]
+    f.a            = "a"
+    f.logFrmFlag   = "Y"
+  end.click_button
+
+  order_page = a.click(my_page.link_with(:text => /Orders/))
+  order_received_page = a.click(order_page.link_with(:text => /My Orders Received/))
+
+  rows = order_received_page.parser.xpath('//table[@class="tableT1"]/tr')
+  rows.pop
+  details = rows.drop(1).collect do |row|
+    detail = {}
+      [
+        [:id,           "td[1]/a/text()"],
+        [:link,         "td[1]/a/@href"],
+        [:date,         "td[3]/text()"],
+        [:invoice,      "td[6]/a/@href"],
+        [:buyer,        "td[8]/a/text()"],
+        [:total,        "td[13]/text()"],
+        [:status,       "td[14]/select[@class='mfB']/option[@selected='selected']/text()"],
+      ].each do |name, xpath|
+        detail[name] = row.at_xpath(xpath).to_s.strip
+      end
+      detail
+    end
+
+end

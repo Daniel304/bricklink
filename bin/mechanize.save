@@ -1,0 +1,54 @@
+require 'rubygems'
+require 'mechanize'
+
+
+a = Mechanize.new { |agent|
+  agent.follow_meta_refresh = true
+}
+
+a.get('http://www.bricklink.com/') do |page|
+  # Click the login link
+  login_page = a.click(page.link_with(:text => /Login/))
+
+  # Submit the login form
+  my_page = login_page.form_with(:action => '/login.asp?logInTo=&logFolder=p&logSub=w') do |f|
+    f.frmUsername  = ARGV[0]
+    f.frmPassword  = ARGV[1]
+    f.a            = "a"
+    f.logFrmFlag   = "Y"
+  end.click_button
+
+  order_page = a.click(my_page.link_with(:text => /Orders/))
+  order_received_page = a.click(order_page.link_with(:text => /My Orders Received/))
+
+  rows = order_received_page.parser.xpath('//center/form/table[@class="ta"]/tr')
+  self.details = rows.drop(3).collect do |row|
+    detail = {}
+      [
+        [:id,           "td[3]/a/text()"],
+        [:quantity,     "td[2]/text()"],
+        [:item_id,      "td[3]/a/text()"],
+        [:type,         "td[4]/font[@class='fv']/a[3]/text()"],
+#        [:name,         ""],
+        [:image,        "td[1]/b/a[@id='imgLink0']/img[@id='img0']/@src"],
+        [:color_id,     "td[1]/b/a[@id='imgLink0']/img[@id='img0']/@src"],
+        [:description,  "td[4]/b/text()"],
+#        [:release_year, ""],
+#        [:weight,       ""],
+#        [:dimensions,   ""],
+      ].each do |name, xpath|
+        detail[name] = row.at_xpath(xpath).to_s.strip
+      end
+      detail
+    end
+
+
+
+#  puts my_page.to_yaml
+
+  order_received_page.links.each do |link|
+    text = link.text.strip
+    next unless text.length > 0
+    puts text
+  end
+end

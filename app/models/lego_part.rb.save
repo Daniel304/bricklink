@@ -1,0 +1,52 @@
+require 'active_model'
+
+class LegoPart
+  include ActiveModel::Validations
+  include ActiveModel::Conversion
+  extend ActiveModel::Naming
+  require 'nokogiri'
+  require 'open-uri'
+
+  attr_accessor :id, :quantity, :item_id, :name, :image, :color_id, :description, :release_year, :weight, :dimensions, :type, :details
+
+  def initialize(attributes = {})
+    attributes.each do |name, value|
+      send("#{name}=", value)
+    end
+  end
+
+  def persisted?
+    false
+  end
+
+  def find_parts(id)
+    doc                 = Nokogiri::HTML(open('http://www.bricklink.com/catalogItemInv.asp?S='+ id))
+    doc.css('br').each{ |br| br.replace(";") }
+    self.id             = id
+    rows                = doc.xpath('//center/form/table[@class="ta"]/tr')
+    self.details        = []
+    rows.drop(3).collect do |row|
+      detail = {}
+      [
+        [:id,           "td[3]/a/text()"],
+        [:quantity,     "td[1]/font/b/text()"],
+#        [:quantity,     "td[2]/text()"],
+        [:item_id,      "td[3]/a/text()"],
+
+
+
+
+        [:type,         "td[4]/font[@class='fv']/a[3]/text()"],
+        [:image,        "td[1]/b/a[@id='imgLink0']/img[@id='img0']/@src"],
+        [:color_id,     "td[1]/b/a[@id='imgLink0']/img[@id='img0']/@src"],
+        [:description,  "td[4]/b/text()"],
+      ].each do |name, xpath|
+        detail[name] = row.at_xpath(xpath).to_s.strip
+      end
+      next if row.at_xpath("td[2]/text()").to_s == "" and row.at_xpath("td[3]/a/text()").to_s == ""
+      break if row.at_xpath("td/font/b/text()").to_s.strip.match("Extra Items")
+      self.details << detail
+    end
+  end
+end
+

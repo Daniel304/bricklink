@@ -1,0 +1,99 @@
+require 'active_model'
+require 'mechanize'
+
+class LegoInvoice
+  include ActiveModel::Validations
+  include ActiveModel::Conversion
+  extend ActiveModel::Naming
+  require 'nokogiri'
+  require 'open-uri'
+
+  attr_accessor :id, :order_date, :payment_by, :payment_in, :order_status, :changed, :total_items, :unique_items, :invoiced, :order_total,
+                :shipping, :insurance, :additional_charges_1, :additional_charges_2, :credit, :grand_total, :orders_in_this_store, :items,
+                :image, :condition, :item_description, :lots, :qty, :price, :total, :username, :email, :naw, :buyer, :seller, :store_name, :store_link
+
+  def initialize(attributes = {})
+    attributes.each do |name, value|
+      send("#{name}=", value)
+    end
+  end
+
+  def persisted?
+    false
+  end
+
+  def find_invoice(username,password,id)
+    a = Mechanize.new { |agent|
+     agent.follow_meta_refresh = true
+    }
+    a.get('http://www.bricklink.com/') do |page|
+      # Click the login link
+      login_page = a.click(page.link_with(:text => /Login/))
+      # Submit the login form
+      my_page = login_page.form_with(:action => '/login.asp?logInTo=&logFolder=p&logSub=w') do |f|
+        f.frmUsername  = username
+        f.frmPassword  = password
+        f.a            = "a"
+        f.logFrmFlag   = "Y"
+      end.click_button
+
+      order_page = a.click(my_page.link_with(:text => /Orders/))
+      order_received_page = a.click(order_page.link_with(:text => /My Orders Received/))
+      order_content_page = a.click(order_received_page.link_with(:text => /#{id}/))
+      order_content_page.parser.css('br').each{ |br| br.replace(";") }
+
+      self.id                   = id
+      self.order_date           = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[1]/td[2]/text()').to_s
+      self.payment_by           = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[2]/td[2]/text()').to_s
+      self.payment_in           = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[3]/td[2]/text()').to_s
+      self.order_status         = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[4]/td[2]/text()').to_s
+      self.changed              = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[5]/td[2]/text()').to_s
+      self.total_items          = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[6]/td[2]/text()').to_s
+      self.unique_items         = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[7]/td[2]/text()').to_s
+      self.invoiced             = order_content_page.parser.xpath('//table[1]/tr/td[1]/table[@class="ta"]/tr[8]/td[2]/text()').to_s
+      self.order_total          = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[1]/td[2]/text()').to_s
+      self.shipping             = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[2]/td[2]/text()').to_s
+      self.insurance            = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[3]/td[2]/text()').to_s
+      self.additional_charges_1 = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[4]/td[2]/text()').to_s
+      self.additional_charges_2 = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[5]/td[2]/text()').to_s
+      self.credit               = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[6]/td[2]/text()').to_s
+      self.grand_total          = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[7]/td[2]/text()').to_s
+      self.orders_in_this_store = order_content_page.parser.xpath('//table[1]/tr/td[2]/table[@class="ta"]/tr[8]/td[2]/text()').to_s
+
+      self.items = []
+      rows = order_content_page.parser.xpath('//table[@class="ta"][2]/tr')
+      rows.drop(2).collect do |row|
+        item = {}
+        [
+          [:image,            "td[1]/center/a[@id='imgLink0']/img[@id='img0']/@src"],
+          [:condition,        "td[2]/b/text()"],
+          [:item_description, "td[3]/span[@class='u']/a/font/text()"],
+          [:lots,             "td[4]/text()"],
+          [:qty,              "td[5]/text()"],
+          [:price,            "td[6]/text()"],
+          [:total,            "td[7]/text()"],
+        ].each do |name, xpath|
+          item[name] = row.at_xpath(xpath).to_s.strip
+        end
+        next if row.at_xpath("td[3]/span[@class='u']/a/font/text()").to_s == "" and row.at_xpath("td[7]/text()").to_s == ""
+        break if row.at_xpath("td[1]/b/text()").to_s.strip.match("Order Total")
+        self.items << item
+      end
+
+      self.buyer = {
+        :username => order_content_page.parser.xpath('//table[@class="ta"][3]/table/tr[1]/td[2]/b/text()').to_s.strip,
+        :email => order_content_page.parser.xpath('//table[@class="ta"][3]/table/tr[2]/td[2]/a/text()').to_s.strip,
+        :naw => order_content_page.parser.xpath('//table[@class="ta"][3]/table/tr[3]/td[2]/text()').to_s.strip
+      }
+
+      self.seller = {
+        :username => order_content_page.parser.xpath('//table[@class="ta"][3]/table[2]/tr[1]/td[2]/b/text()').to_s.strip,
+        :store_name => order_content_page.parser.xpath('//table[@class="ta"][3]/table[2]/tr[2]/td[2]/b/text()').to_s.strip,
+        :store_link => order_content_page.parser.xpath('//table[@class="ta"][3]/table[2]/tr[3]/td[2]/a/text()').to_s.strip,
+        :email => order_content_page.parser.xpath('//table[@class="ta"][3]/table[2]/tr[4]/td[2]/a/text()').to_s.strip,
+        :naw => order_content_page.parser.xpath('//table[@class="ta"][3]/table[2]/tr[5]/td[2]/text()').to_s
+      }
+    end
+  end
+end
+
